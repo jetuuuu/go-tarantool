@@ -45,11 +45,15 @@ func (c *Connection) Query(query string, args []_driver.Value) (_driver.Rows, er
 		return nil, err
 	}
 
-	return &rows{data: resp.Data}, nil
+	r := &rows{data: resp.Data}
+	r.readColumns(resp.Meta)
+
+	return r, nil
 }
 
 type rows struct {
 	data   []interface{}
+	columns []string
 	iter   int
 	closed bool
 }
@@ -60,18 +64,18 @@ func (r *rows) Close() error {
 	return nil
 }
 
-func (r *rows) Columns() []string {
+func (r rows) Columns() []string {
+	return r.columns
+}
+
+func (r *rows) readColumns(meta map[string]string) {
 	var columns []string
 
-	if len(r.data) == 0 {
-		return nil
+	for k := range meta {
+		columns = append(columns, k)
 	}
 
-	for i := range r.data[0].([]interface{}) {
-		columns = append(columns, fmt.Sprintf("%d", i))
-	}
-
-	return columns
+	r.columns = columns
 }
 
 func (r *rows) Next(dest []_driver.Value) error {

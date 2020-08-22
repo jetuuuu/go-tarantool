@@ -2,7 +2,6 @@ package tarantool
 
 import (
 	"fmt"
-
 	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
@@ -12,6 +11,7 @@ type Response struct {
 	Error     string // error message
 	// Data contains deserialized data for untyped requests
 	Data []interface{}
+	Meta map[string]string
 	buf  smallBuf
 }
 
@@ -65,6 +65,7 @@ func (resp *Response) decodeHeader(d *msgpack.Decoder) (err error) {
 }
 
 func (resp *Response) decodeBody() (err error) {
+	resp.Meta = make(map[string]string)
 	if resp.buf.Len() > 2 {
 		var l int
 		d := msgpack.NewDecoder(&resp.buf)
@@ -89,6 +90,16 @@ func (resp *Response) decodeBody() (err error) {
 			case KeyError:
 				if resp.Error, err = d.DecodeString(); err != nil {
 					return err
+				}
+			case 0x32:
+				arr, err := d.DecodeSlice()
+				if err != nil {
+					return err
+				}
+
+				for _, m := range arr {
+					mm := m.(map[interface{}]interface{})
+					resp.Meta[mm[uint64(0)].(string)] = mm[uint64(1)].(string)
 				}
 			default:
 				if err = d.Skip(); err != nil {
