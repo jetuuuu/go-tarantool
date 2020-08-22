@@ -13,6 +13,7 @@ const (
 	Call17Request    = 10
 	PingRequest      = 64
 	SubscribeRequest = 66
+	Execute = 0x0b
 
 	KeyCode         = 0x00
 	KeySync         = 0x01

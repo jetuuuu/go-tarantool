@@ -346,6 +346,15 @@ func (conn *Connection) EvalAsync(expr string, args interface{}) *Future {
 	})
 }
 
+func (conn *Connection) Execute(expr string, _ interface{}) (*Response, error){
+	future := conn.newFuture(Execute)
+	return future.send(conn, func(enc *msgpack.Encoder) error {
+		enc.EncodeMapLen(1)
+		enc.EncodeUint64(0x40)
+		return enc.EncodeString(expr)
+	}).Get()
+}
+
 //
 // private
 //
