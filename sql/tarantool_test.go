@@ -16,8 +16,7 @@ func TestConnect(t *testing.T) {
 		fmt.Println("Connection refused:", err)
 	}
 
-	//resp, err = conn.Select(spaceNo, indexNo, 0, 1, tarantool.IterEq, []interface{}{uint(15)})
-	resp, err := conn.Execute("SELECT * FROM table1", nil)
+	resp, err := conn.Execute("SELECT * FROM table1 where column1 = ?", []interface{}{1})
 	fmt.Println(err, resp.Data)
 }
 
@@ -33,7 +32,7 @@ func TestSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := db.Query("select * from table1")
+	rows, err := db.Query("select * from table1 where column1 >= $1", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

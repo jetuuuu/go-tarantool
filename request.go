@@ -346,12 +346,14 @@ func (conn *Connection) EvalAsync(expr string, args interface{}) *Future {
 	})
 }
 
-func (conn *Connection) Execute(expr string, _ interface{}) (*Response, error){
+func (conn *Connection) Execute(expr string, args interface{}) (*Response, error) {
 	future := conn.newFuture(Execute)
 	return future.send(conn, func(enc *msgpack.Encoder) error {
-		enc.EncodeMapLen(1)
+		enc.EncodeMapLen(2)
 		enc.EncodeUint64(0x40)
-		return enc.EncodeString(expr)
+		enc.EncodeString(expr)
+		enc.EncodeUint64(0x41)
+		return enc.Encode(args)
 	}).Get()
 }
 
