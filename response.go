@@ -2,6 +2,7 @@ package tarantool
 
 import (
 	"fmt"
+
 	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
@@ -10,9 +11,10 @@ type Response struct {
 	Code      uint32
 	Error     string // error message
 	// Data contains deserialized data for untyped requests
-	Data []interface{}
-	Meta map[string]string
-	buf  smallBuf
+	Data               []interface{}
+	Meta               map[string]string
+	SQLChangedRowCount uint64
+	buf                smallBuf
 }
 
 func (resp *Response) fill(b []byte) {
@@ -64,55 +66,81 @@ func (resp *Response) decodeHeader(d *msgpack.Decoder) (err error) {
 	return nil
 }
 
-func (resp *Response) decodeBody() (err error) {
+func (resp *Response) decodeBody() error {
 	resp.Meta = make(map[string]string)
-	if resp.buf.Len() > 2 {
-		var l int
-		d := msgpack.NewDecoder(&resp.buf)
-		if l, err = d.DecodeMapLen(); err != nil {
+
+	if resp.buf.Len() <= 2 {
+		return nil
+	}
+
+	d := msgpack.NewDecoder(&resp.buf)
+
+	l, err := d.DecodeMapLen()
+	if err != nil {
+		return err
+	}
+
+	for ; l > 0; l-- {
+		var cd int
+		if cd, err = resp.smallInt(d); err != nil {
 			return err
 		}
-		for ; l > 0; l-- {
-			var cd int
-			if cd, err = resp.smallInt(d); err != nil {
+
+		switch cd {
+		case KeyData:
+			var res interface{}
+			var ok bool
+			if res, err = d.DecodeInterface(); err != nil {
 				return err
 			}
-			switch cd {
-			case KeyData:
-				var res interface{}
-				var ok bool
-				if res, err = d.DecodeInterface(); err != nil {
-					return err
-				}
-				if resp.Data, ok = res.([]interface{}); !ok {
-					return fmt.Errorf("result is not array: %v", res)
-				}
-			case KeyError:
-				if resp.Error, err = d.DecodeString(); err != nil {
-					return err
-				}
-			case 0x32:
-				arr, err := d.DecodeSlice()
-				if err != nil {
-					return err
-				}
+			if resp.Data, ok = res.([]interface{}); !ok {
+				return fmt.Errorf("result is not array: %v", res)
+			}
+		case KeySQLInfo:
+			i, err := d.DecodeMap()
+			if err != nil {
+				return err
+			}
 
-				for _, m := range arr {
-					mm := m.(map[interface{}]interface{})
-					resp.Meta[mm[uint64(0)].(string)] = mm[uint64(1)].(string)
-				}
-			default:
-				if err = d.Skip(); err != nil {
-					return err
+			info := i.(map[interface{}]interface{})
+			resp.SQLChangedRowCount = info[uint64(0)].(uint64)
+		case KeyError:
+			resp.Error, err = d.DecodeString()
+			if err != nil {
+				return err
+			}
+		case KeyMetaData:
+			meta, err := d.DecodeSlice()
+			if err != nil {
+				return err
+			}
+
+			for _, m := range meta {
+				metaMap, ok := m.(map[interface{}]interface{})
+				if ok {
+					key, ok := metaMap[uint64(0)].(string)
+					if ok {
+						if value, ok := metaMap[uint64(1)].(string); ok {
+							resp.Meta[key] = value
+						}
+					}
 				}
 			}
-		}
-		if resp.Code != OkCode {
-			resp.Code &^= ErrorCodeBit
-			err = Error{resp.Code, resp.Error}
+		default:
+			fmt.Println("skip: ", cd)
+			if err = d.Skip(); err != nil {
+				return err
+			}
 		}
 	}
-	return
+
+	if resp.Code != OkCode {
+		resp.Code &^= ErrorCodeBit
+
+		return Error{resp.Code, resp.Error}
+	}
+
+	return nil
 }
 
 func (resp *Response) decodeBodyTyped(res interface{}) (err error) {

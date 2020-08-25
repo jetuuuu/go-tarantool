@@ -3,6 +3,7 @@ package sql
 import (
 	//_sql "database/sql"
 	_driver "database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 
@@ -51,11 +52,34 @@ func (c *Connection) Query(query string, args []_driver.Value) (_driver.Rows, er
 	return r, nil
 }
 
+func (c *Connection) QueryContext() {}
+
+func (c *Connection) Exec(query string, args []_driver.Value) (_driver.Result, error) {
+	resp, err := c.conn.Execute(query, args)
+	if err != nil {
+		return nil, err
+	}
+
+	return execResult{affectedRowCount: int64(resp.SQLChangedRowCount)}, nil
+}
+
+type execResult struct {
+	affectedRowCount int64
+}
+
+func (r execResult) LastInsertId() (int64, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (r execResult) RowsAffected() (int64, error) {
+	return r.affectedRowCount, nil
+}
+
 type rows struct {
-	data   []interface{}
+	data    []interface{}
 	columns []string
-	iter   int
-	closed bool
+	iter    int
+	closed  bool
 }
 
 func (r *rows) Close() error {
