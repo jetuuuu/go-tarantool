@@ -352,6 +352,7 @@ func (conn *Connection) Execute(expr string, args interface{}) (*Response, error
 		enc.EncodeMapLen(2)
 		enc.EncodeUint64(KeySQLText)
 		enc.EncodeString(expr)
+
 		enc.EncodeUint64(KeySQLBindParams)
 		return enc.Encode(args)
 	}).Get()

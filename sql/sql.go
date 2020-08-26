@@ -5,16 +5,21 @@ import (
 	_driver "database/sql/driver"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/tarantool/go-tarantool"
 )
+
+var EmptyConnectionError = errors.New("connection string is empty")
 
 type Tarantool struct {
 	Options tarantool.Opts
 }
 
 type Connection struct {
-	conn *tarantool.Connection
+	master      *tarantool.Connection
+	replicas    []*tarantool.Connection
+	nextReplica int
 }
 
 func (c *Connection) Prepare(query string) (_driver.Stmt, error) {
@@ -22,7 +27,25 @@ func (c *Connection) Prepare(query string) (_driver.Stmt, error) {
 }
 
 func (c *Connection) Close() error {
-	return c.conn.Close()
+	var errs []string
+
+	err := c.master.Close()
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+
+	for _, r := range c.replicas {
+		err = r.Close()
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+
+	if len(errs) != 0 {
+		return errors.New(strings.Join(errs, "\n"))
+	}
+
+	return nil
 }
 
 func (c *Connection) Begin() (_driver.Tx, error) {
@@ -34,7 +57,15 @@ func (c *Connection) BeginTx(ctx context.Context, opt _driver.TxOptions) (_drive
 }
 
 func (c *Connection) Query(query string, args []_driver.Value) (_driver.Rows, error) {
-	resp, err := c.conn.Execute(query, args)
+	defer func() {
+		if c.nextReplica >= (len(c.replicas) - 1) {
+			c.nextReplica = 0
+		} else {
+			c.nextReplica++
+		}
+	}()
+
+	resp, err := c.replicas[c.nextReplica].Execute(query, args)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +87,11 @@ func (c *Connection) QueryContext(ctx context.Context, query string, namedArgs [
 }
 
 func (c *Connection) Exec(query string, args []_driver.Value) (_driver.Result, error) {
-	resp, err := c.conn.Execute(query, args)
+	if args == nil {
+		args = []_driver.Value{}
+	}
+
+	resp, err := c.master.Execute(query, args)
 	if err != nil {
 		return nil, err
 	}
@@ -75,10 +110,30 @@ func (c *Connection) ExecContext(ctx context.Context, query string, namedArgs []
 }
 
 func (t Tarantool) Open(name string) (_driver.Conn, error) {
-	conn, err := tarantool.Connect(name, t.Options)
+	names := strings.Split(name, ",")
+	if len(names) == 0 {
+		return nil, EmptyConnectionError
+	}
+
+	master, err := tarantool.Connect(names[0], t.Options)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Connection{conn: conn}, nil
+	c := &Connection{master: master}
+
+	if len(names) == 1 {
+		c.replicas = []*tarantool.Connection{master}
+
+		return c, nil
+	}
+
+	for _, addr := range names[1:] {
+		replica, err := tarantool.Connect(addr, t.Options)
+		if err == nil {
+			c.replicas = append(c.replicas, replica)
+		}
+	}
+
+	return c, nil
 }
