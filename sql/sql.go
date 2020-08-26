@@ -1,13 +1,10 @@
 package sql
 
 import (
-	//_sql "database/sql"
+	"context"
 	_driver "database/sql/driver"
 	"errors"
 	"fmt"
-	"io"
-
-	//"net"
 
 	"github.com/tarantool/go-tarantool"
 )
@@ -29,15 +26,11 @@ func (c *Connection) Close() error {
 }
 
 func (c *Connection) Begin() (_driver.Tx, error) {
-	return nil, nil
+	return nil, errors.New("not implemented")
 }
 
-func (c *Connection) Commit() error {
-	return nil
-}
-
-func (c *Connection) Rollback() error {
-	return nil
+func (c *Connection) BeginTx(ctx context.Context, opt _driver.TxOptions) (_driver.Tx, error) {
+	return c.Begin()
 }
 
 func (c *Connection) Query(query string, args []_driver.Value) (_driver.Rows, error) {
@@ -52,7 +45,15 @@ func (c *Connection) Query(query string, args []_driver.Value) (_driver.Rows, er
 	return r, nil
 }
 
-func (c *Connection) QueryContext() {}
+func (c *Connection) QueryContext(ctx context.Context, query string, namedArgs []_driver.NamedValue) (_driver.Rows, error) {
+	var args []_driver.Value
+
+	for _, a := range namedArgs {
+		args = append(args, a.Value)
+	}
+
+	return c.Query(query, args)
+}
 
 func (c *Connection) Exec(query string, args []_driver.Value) (_driver.Result, error) {
 	resp, err := c.conn.Execute(query, args)
@@ -63,58 +64,14 @@ func (c *Connection) Exec(query string, args []_driver.Value) (_driver.Result, e
 	return execResult{affectedRowCount: int64(resp.SQLChangedRowCount)}, nil
 }
 
-type execResult struct {
-	affectedRowCount int64
-}
+func (c *Connection) ExecContext(ctx context.Context, query string, namedArgs []_driver.NamedValue) (_driver.Result, error) {
+	var args []_driver.Value
 
-func (r execResult) LastInsertId() (int64, error) {
-	return 0, errors.New("not implemented")
-}
-
-func (r execResult) RowsAffected() (int64, error) {
-	return r.affectedRowCount, nil
-}
-
-type rows struct {
-	data    []interface{}
-	columns []string
-	iter    int
-	closed  bool
-}
-
-func (r *rows) Close() error {
-	r.closed = true
-
-	return nil
-}
-
-func (r rows) Columns() []string {
-	return r.columns
-}
-
-func (r *rows) readColumns(meta map[string]string) {
-	var columns []string
-
-	for k := range meta {
-		columns = append(columns, k)
+	for _, a := range namedArgs {
+		args = append(args, a.Value)
 	}
 
-	r.columns = columns
-}
-
-func (r *rows) Next(dest []_driver.Value) error {
-	if r.closed || r.iter >= len(r.data) {
-		return io.EOF
-	}
-
-	row := r.data[r.iter].([]interface{})
-	r.iter++
-
-	for i, val := range row {
-		dest[i] = _driver.Value(val)
-	}
-
-	return nil
+	return c.Exec(query, args)
 }
 
 func (t Tarantool) Open(name string) (_driver.Conn, error) {

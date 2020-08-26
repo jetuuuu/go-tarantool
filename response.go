@@ -17,10 +17,6 @@ type Response struct {
 	buf                smallBuf
 }
 
-func (resp *Response) fill(b []byte) {
-	resp.buf.b = b
-}
-
 func (resp *Response) smallInt(d *msgpack.Decoder) (i int, err error) {
 	b, err := resp.buf.ReadByte()
 	if err != nil {
@@ -81,21 +77,24 @@ func (resp *Response) decodeBody() error {
 	}
 
 	for ; l > 0; l-- {
-		var cd int
-		if cd, err = resp.smallInt(d); err != nil {
+		cd, err := resp.smallInt(d)
+		if err != nil {
 			return err
 		}
 
 		switch cd {
 		case KeyData:
-			var res interface{}
-			var ok bool
-			if res, err = d.DecodeInterface(); err != nil {
+			res, err := d.DecodeInterface()
+			if err != nil {
 				return err
 			}
-			if resp.Data, ok = res.([]interface{}); !ok {
+
+			data, ok := res.([]interface{})
+			if !ok {
 				return fmt.Errorf("result is not array: %v", res)
 			}
+
+			resp.Data = data
 		case KeySQLInfo:
 			i, err := d.DecodeMap()
 			if err != nil {

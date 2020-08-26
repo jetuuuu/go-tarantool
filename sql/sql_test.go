@@ -51,7 +51,7 @@ func TestSQL(t *testing.T) {
 		t.Fatalf("should be affected 1 row but %d", affected)
 	}
 
-	rows, err := db.Query("select * from table1 where column1 >= $1", 1)
+	rows, err := db.Query("select * from table1 where column1 = $1", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
