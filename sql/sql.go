@@ -29,15 +29,19 @@ func (c *Connection) Prepare(query string) (_driver.Stmt, error) {
 func (c *Connection) Close() error {
 	var errs []string
 
-	err := c.master.Close()
-	if err != nil {
-		errs = append(errs, err.Error())
+	if c.master != nil {
+		err := c.master.Close()
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
 	}
 
 	for _, r := range c.replicas {
-		err = r.Close()
-		if err != nil {
-			errs = append(errs, err.Error())
+		if r != nil {
+			err := r.Close()
+			if err != nil {
+				errs = append(errs, err.Error())
+			}
 		}
 	}
 
@@ -65,7 +69,17 @@ func (c *Connection) Query(query string, args []_driver.Value) (_driver.Rows, er
 		}
 	}()
 
-	resp, err := c.replicas[c.nextReplica].Execute(query, args)
+	instance := c.replicas[c.nextReplica]
+
+	if instance == nil {
+		return nil, _driver.ErrBadConn
+	}
+
+	if args == nil {
+		args = []_driver.Value{}
+	}
+
+	resp, err := instance.Execute(query, args)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +101,10 @@ func (c *Connection) QueryContext(ctx context.Context, query string, namedArgs [
 }
 
 func (c *Connection) Exec(query string, args []_driver.Value) (_driver.Result, error) {
+	if c.master == nil {
+		return nil, _driver.ErrBadConn
+	}
+
 	if args == nil {
 		args = []_driver.Value{}
 	}
@@ -115,9 +133,9 @@ func (t Tarantool) Open(name string) (_driver.Conn, error) {
 		return nil, EmptyConnectionError
 	}
 
-	master, err := tarantool.Connect(names[0], t.Options)
-	if err != nil {
-		return nil, err
+	master, masterErr := tarantool.Connect(names[0], t.Options)
+	if masterErr != nil && len(names) == 1 {
+		return nil, masterErr
 	}
 
 	c := &Connection{master: master}
@@ -133,6 +151,10 @@ func (t Tarantool) Open(name string) (_driver.Conn, error) {
 		if err == nil {
 			c.replicas = append(c.replicas, replica)
 		}
+	}
+
+	if masterErr != nil && len(c.replicas) == 0 {
+		return nil, _driver.ErrBadConn
 	}
 
 	return c, nil
