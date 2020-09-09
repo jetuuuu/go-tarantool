@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tarantool/go-tarantool"
+	"github.com/valenok-husky/go-tarantool"
 )
 
 var EmptyConnectionError = errors.New("connection string is empty")

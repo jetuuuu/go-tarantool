@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tarantool/go-tarantool"
+	"github.com/valenok-husky/go-tarantool"
 )
 
 const (

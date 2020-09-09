@@ -4,8 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"testing"
+	"time"
 
-	"github.com/tarantool/go-tarantool"
+	"github.com/valenok-husky/go-tarantool"
 )
 
 func TestConnect(t *testing.T) {
@@ -71,4 +72,53 @@ func TestSQL(t *testing.T) {
 			t.Fatalf(`got [%d; %s] expected [1, "nikita"]`, index, value)
 		}
 	}
+}
+
+func TestSQL_Replica(t *testing.T) {
+	dt := Tarantool{
+		Options: tarantool.Opts{User: "guest"},
+	}
+
+	sql.Register("tarantool", &dt)
+
+	db, err := sql.Open("tarantool", "localhost:3301,localhost:3302")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db.SetConnMaxLifetime(10 * time.Second)
+
+	go func() {
+		for i := 3; i < 1000; i++ {
+			_, err = db.Exec("insert into table1 values (?,?)", i, fmt.Sprintf("%d", i))
+			if err != nil {
+				// t.Fatal(err.Error())
+				fmt.Println("insert: ", err)
+			}
+
+			time.Sleep(3 * time.Second)
+		}
+	}()
+
+	go func() {
+		for {
+			row := db.QueryRow("select count(*) from table1")
+			if err := row.Err(); err != nil {
+				fmt.Println("select: ", err)
+			} else {
+				var cnt int
+
+				err := row.Scan(&cnt)
+				if err != nil {
+					fmt.Println("scan: ", err)
+				} else {
+					fmt.Println("cnt: ", cnt)
+				}
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+	}()
+
+	time.Sleep(2 * time.Minute)
 }
